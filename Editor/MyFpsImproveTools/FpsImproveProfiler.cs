@@ -1,3 +1,4 @@
+/*
 // FpsImproveProfiler.cs (UPDATED: adds Replace Shader/Material for audit rules)
 // Place this file under: Assets/Editor/FpsImproveProfiler.cs
 
@@ -1783,3 +1784,4 @@ namespace Tools.FpsImproveProfiler
     #endregion
 }
 #endif
+*/
