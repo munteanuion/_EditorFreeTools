@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+#if UNITY_EDITOR && ENABLE_INPUT_SYSTEM
 using System;
 using System.IO;
 using System.Text;
