@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -112,3 +113,5 @@ namespace NextnityStudio.SplineRoad
         private long KeyOf(int x, int y) => ((long)x << KeyShift) | (uint)y;
     }
 }
+
+#endif

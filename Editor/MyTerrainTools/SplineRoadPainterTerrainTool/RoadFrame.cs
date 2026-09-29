@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 
 namespace NextnityStudio.SplineRoad.EditorTools
@@ -39,3 +40,5 @@ namespace NextnityStudio.SplineRoad.EditorTools
         }
     }
 }
+
+#endif

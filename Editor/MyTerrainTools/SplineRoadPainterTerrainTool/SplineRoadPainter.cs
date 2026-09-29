@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Splines;
@@ -134,3 +135,5 @@ namespace NextnityStudio.SplineRoad
         }
     }
 }
+
+#endif
