@@ -1,9 +1,11 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using Object = UnityEngine.Object;
 using Stopwatch = System.Diagnostics.Stopwatch;
 
-// Replaces Unity terrain trees with prefab GameObject instances.
+// Replaces Unity terrain trees with prefab GameObject instances, grouped per prefab type:
+// <terrain parent> / <prefab name> / <instances>.
 // Original approach: http://answers.unity3d.com/questions/723266/converting-all-terrain-trees-to-gameobjects.html
 public class TreeReplacerS : EditorWindow
 {
@@ -230,6 +232,7 @@ public class TreeReplacerS : EditorWindow
         float heightStep = 1f / data.heightmapResolution;
 
         Transform parentTransform = GetOrCreateParent(terrain, parentName).transform;
+        Dictionary<GameObject, Transform> groups = new Dictionary<GameObject, Transform>();
 
         for (int i = 0; i < trees.Length; i++)
         {
@@ -250,7 +253,8 @@ public class TreeReplacerS : EditorWindow
             }
 
             Vector3 position = Vector3.Scale(tree.position, terrainSize) + terrainPosition;
-            GameObject instance = CreateInstance(prefab, parentTransform);
+            Transform groupTransform = GetOrCreateGroup(parentTransform, prefab, groups);
+            GameObject instance = CreateInstance(prefab, groupTransform);
 
             if (instance == null)
             {
@@ -341,7 +345,30 @@ public class TreeReplacerS : EditorWindow
 
         GameObject parent = new GameObject(parentName);
         parent.transform.SetParent(terrain.transform, false);
+        Undo.RegisterCreatedObjectUndo(parent, "Create tree parent");
         return parent;
+    }
+
+    private static Transform GetOrCreateGroup(Transform parentTransform, GameObject prefab, Dictionary<GameObject, Transform> groups)
+    {
+        if (groups.TryGetValue(prefab, out Transform group) && group != null)
+        {
+            return group;
+        }
+
+        Transform existing = parentTransform.Find(prefab.name);
+
+        if (existing != null)
+        {
+            groups[prefab] = existing;
+            return existing;
+        }
+
+        GameObject groupObject = new GameObject(prefab.name);
+        groupObject.transform.SetParent(parentTransform, false);
+        Undo.RegisterCreatedObjectUndo(groupObject, "Create tree group");
+        groups[prefab] = groupObject.transform;
+        return groupObject.transform;
     }
 
     #endregion
