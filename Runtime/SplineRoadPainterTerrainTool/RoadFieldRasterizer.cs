@@ -42,12 +42,13 @@ namespace NextnityStudio.SplineRoad
 
     public sealed class RoadField
     {
-        public RoadField(RectInt rect)
+        public RoadField(RectInt rect, bool blendHeights)
         {
             Rect = rect;
             DistanceSqr = new float[rect.width * rect.height];
             Side = new float[rect.width * rect.height];
             Height = new float[rect.width * rect.height];
+            BlendWeight = blendHeights ? new float[rect.width * rect.height] : null;
             Array.Fill(DistanceSqr, float.MaxValue);
         }
 
@@ -60,6 +61,12 @@ namespace NextnityStudio.SplineRoad
 
         public float[] Height { get; }
 
+        /// <summary>
+        /// Accumulated blend weight when the field is rasterized for heights.
+        /// Null for distance-only fields (texture and detail maps).
+        /// </summary>
+        public float[] BlendWeight { get; }
+
         public int IndexOf(int x, int y) => (y - Rect.y) * Rect.width + (x - Rect.x);
 
         public float DistanceAt(int index) => Mathf.Sqrt(DistanceSqr[index]);
@@ -68,8 +75,14 @@ namespace NextnityStudio.SplineRoad
     public sealed class RoadFieldRasterizer
     {
         private const float MinSegmentLengthSqr = 1e-8f;
+        private const float MinBlendWeight = 1e-6f;
 
         public RoadField Rasterize(TerrainGrid grid, IReadOnlyList<Vector3[]> polylines, float reach)
+        {
+            return Rasterize(grid, polylines, reach, 0f);
+        }
+
+        public RoadField Rasterize(TerrainGrid grid, IReadOnlyList<Vector3[]> polylines, float reach, float heightBlendRadius)
         {
             if (polylines == null) throw new ArgumentNullException(nameof(polylines));
             if (!TryGetBounds(polylines, reach, out var min, out var max)) return null;
@@ -77,7 +90,8 @@ namespace NextnityStudio.SplineRoad
             var rect = grid.ClampedRect(min, max);
             if (rect.width <= 0 || rect.height <= 0) return null;
 
-            var field = new RoadField(rect);
+            var blendHeights = heightBlendRadius > 0f;
+            var field = new RoadField(rect, blendHeights);
 
             for (var p = 0; p < polylines.Count; p++)
             {
@@ -85,8 +99,13 @@ namespace NextnityStudio.SplineRoad
 
                 for (var i = 0; i < points.Length - 1; i++)
                 {
-                    StampSegment(grid, field, points[i], points[i + 1], reach);
+                    StampSegment(grid, field, points[i], points[i + 1], reach, heightBlendRadius);
                 }
+            }
+
+            if (blendHeights)
+            {
+                NormalizeBlendedHeights(field);
             }
 
             return field;
@@ -118,7 +137,13 @@ namespace NextnityStudio.SplineRoad
             return found;
         }
 
-        private void StampSegment(TerrainGrid grid, RoadField field, Vector3 start, Vector3 end, float reach)
+        private void StampSegment(
+            TerrainGrid grid,
+            RoadField field,
+            Vector3 start,
+            Vector3 end,
+            float reach,
+            float heightBlendRadius)
         {
             var origin = new Vector2(start.x, start.z);
             var direction = new Vector2(end.x - start.x, end.z - start.z);
@@ -126,6 +151,7 @@ namespace NextnityStudio.SplineRoad
             var margin = new Vector2(reach, reach);
             var segmentRect = grid.ClampedRect(Vector2.Min(origin, origin + direction) - margin, Vector2.Max(origin, origin + direction) + margin);
             var reachSqr = reach * reach;
+            var blendRadiusSqr = heightBlendRadius * heightBlendRadius;
 
             for (var y = segmentRect.yMin; y < segmentRect.yMax; y++)
             {
@@ -138,12 +164,42 @@ namespace NextnityStudio.SplineRoad
                     if (distanceSqr > reachSqr) continue;
 
                     var index = field.IndexOf(x, y);
+                    var height = Mathf.Lerp(start.y, end.y, t);
+
+                    if (field.BlendWeight != null && distanceSqr < blendRadiusSqr)
+                    {
+                        var weight = BlendWeight(distanceSqr, blendRadiusSqr);
+                        field.Height[index] += height * weight;
+                        field.BlendWeight[index] += weight;
+                    }
+
                     if (distanceSqr >= field.DistanceSqr[index]) continue;
 
                     field.DistanceSqr[index] = distanceSqr;
                     field.Side[index] = (toCell.x - closest.x) * direction.y - (toCell.y - closest.y) * direction.x;
-                    field.Height[index] = Mathf.Lerp(start.y, end.y, t);
+
+                    if (field.BlendWeight == null)
+                    {
+                        field.Height[index] = height;
+                    }
                 }
+            }
+        }
+
+        private static float BlendWeight(float distanceSqr, float blendRadiusSqr)
+        {
+            if (blendRadiusSqr <= MinBlendWeight) return 0f;
+
+            var normalized = 1f - Mathf.Sqrt(distanceSqr / blendRadiusSqr);
+            return normalized * normalized * normalized;
+        }
+
+        private static void NormalizeBlendedHeights(RoadField field)
+        {
+            for (var i = 0; i < field.Height.Length; i++)
+            {
+                var weight = field.BlendWeight[i];
+                field.Height[i] = weight > MinBlendWeight ? field.Height[i] / weight : 0f;
             }
         }
     }

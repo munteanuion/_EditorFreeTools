@@ -29,7 +29,7 @@ namespace NextnityStudio.SplineRoad
             var size = new Vector2(terrainData.size.x, terrainData.size.z);
 
             var heightGrid = new TerrainGrid(terrainData.heightmapResolution, origin, size, false);
-            var heightField = _rasterizer.Rasterize(heightGrid, polylines, profile.Reach);
+            var heightField = _rasterizer.Rasterize(heightGrid, polylines, profile.Reach, profile.JunctionBlendRadius);
             if (heightField == null) return;
 
             RoadField alphaField = null;

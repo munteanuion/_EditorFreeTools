@@ -16,6 +16,7 @@ namespace NextnityStudio.SplineRoad
         public const string RoadsideFieldName = nameof(_roadside);
 
         private const float Half = 0.5f;
+        private const float DefaultJunctionBlendRadius = 8f;
 
         [Header("Shape")]
         [SerializeField, Min(0.5f)] private float _width = 6f;
@@ -28,6 +29,10 @@ namespace NextnityStudio.SplineRoad
         [SerializeField] private bool _followTerrain = true;
         [SerializeField, Range(0, 256)] private int _smoothingPasses = 24;
         [SerializeField, Min(0.25f)] private float _sampleSpacing = 1f;
+
+        [Header("Intersections")]
+        [Tooltip("Radius around road centerlines where heights from different splines are blended. The effective radius is never smaller than road half-width + shoulder width.")]
+        [SerializeField, Min(0f)] private float _junctionBlendRadius = DefaultJunctionBlendRadius;
 
         [Header("Texture")]
         [SerializeField] private bool _paintTexture = true;
@@ -58,6 +63,8 @@ namespace NextnityStudio.SplineRoad
         public int SmoothingPasses => _smoothingPasses;
 
         public float SampleSpacing => _sampleSpacing;
+
+        public float JunctionBlendRadius => Mathf.Max(HalfWidth + _shoulderWidth, _junctionBlendRadius);
 
         public bool PaintTexture => _paintTexture;
 
