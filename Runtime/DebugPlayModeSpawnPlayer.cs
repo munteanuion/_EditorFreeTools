@@ -1,12 +1,15 @@
+using UnityEngine;
+
 #if UNITY_EDITOR
 using System;
 using System.Threading.Tasks;
-using UnityEngine;
+#endif
 
 namespace Plugins._EditorFreeTools.Runtime
 {
     public class DebugSpawnPlayer : MonoBehaviour
     {
+#if UNITY_EDITOR
         private async void Start()
         {
             try
@@ -23,11 +26,11 @@ namespace Plugins._EditorFreeTools.Runtime
 
                 PlayModeSpawnData.HasSpawn = false;
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 // ignore
             }
         }
+#endif
     }
 }
-#endif

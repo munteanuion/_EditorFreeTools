@@ -1,4 +1,3 @@
-#if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Splines;
@@ -19,8 +18,10 @@ namespace NextnityStudio.SplineRoad
         [SerializeField] private SplineRoadData _data;
         [SerializeField] private RoadPreviewSettings _preview = new RoadPreviewSettings();
 
+#if UNITY_EDITOR
         private readonly SplinePolylineSampler _sampler = new SplinePolylineSampler();
         private readonly RoadTerrainBuilder _builder = new RoadTerrainBuilder();
+#endif
         private SplineContainer _container;
 
         public Terrain Terrain => _terrain;
@@ -51,6 +52,7 @@ namespace NextnityStudio.SplineRoad
             _terrain = Terrain.activeTerrain;
         }
 
+#if UNITY_EDITOR
         public void ApplyRoad()
         {
             if (!Validate()) return;
@@ -69,6 +71,7 @@ namespace NextnityStudio.SplineRoad
             _builder.Build(_terrain, polylines, profile, _data.Snapshot);
             _data.SaveSpline(Container);
         }
+#endif
 
         public void RevertRoad()
         {
@@ -99,12 +102,14 @@ namespace NextnityStudio.SplineRoad
             }
         }
 
+#if UNITY_EDITOR
         public List<Vector3[]> SamplePolylines()
         {
             if (!IsReady) return new List<Vector3[]>();
 
             return _sampler.Sample(Container, _terrain, _data.Profile);
         }
+#endif
 
         private bool Validate()
         {
@@ -135,5 +140,3 @@ namespace NextnityStudio.SplineRoad
         }
     }
 }
-
-#endif

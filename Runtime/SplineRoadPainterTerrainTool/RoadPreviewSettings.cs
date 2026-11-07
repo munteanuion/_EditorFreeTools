@@ -1,4 +1,3 @@
-#if UNITY_EDITOR
 using System;
 using UnityEngine;
 
@@ -45,5 +44,3 @@ namespace NextnityStudio.SplineRoad
         public float SurfaceOpacity => _surfaceOpacity;
     }
 }
-
-#endif
