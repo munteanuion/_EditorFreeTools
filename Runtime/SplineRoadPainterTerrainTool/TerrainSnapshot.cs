@@ -128,6 +128,13 @@ namespace NextnityStudio.SplineRoad
 
         public bool Restore(TerrainData terrainData)
         {
+            if (!RestoreHeights(terrainData)) return false;
+
+            return RestoreSurfaceAndVegetation(terrainData);
+        }
+
+        public bool RestoreHeights(TerrainData terrainData)
+        {
             if (terrainData == null) throw new ArgumentNullException(nameof(terrainData));
             if (!_hasData) return true;
             if (terrainData.heightmapResolution != _heightResolution) return false;
@@ -136,6 +143,15 @@ namespace NextnityStudio.SplineRoad
             Buffer.BlockCopy(_heights, 0, heights, 0, _heights.Length * sizeof(float));
             terrainData.SetHeightsDelayLOD(_heightRect.x, _heightRect.y, heights);
             terrainData.SyncHeightmap();
+
+            return true;
+        }
+
+        public bool RestoreSurfaceAndVegetation(TerrainData terrainData)
+        {
+            if (terrainData == null) throw new ArgumentNullException(nameof(terrainData));
+            if (!_hasData) return true;
+            if (terrainData.heightmapResolution != _heightResolution) return false;
 
             var success = RestoreAlphas(terrainData);
             success &= RestoreDetails(terrainData);

@@ -36,13 +36,39 @@ namespace NextnityStudio.SplineRoad
             public TreeSeparationGrid TreeGrid { get; }
         }
 
+        private readonly struct PreparedTile
+        {
+            public PreparedTile(TerrainTile tile, TerrainSnapshot snapshot, RoadField heightField, RoadField alphaField, RoadField detailField, int layerIndex)
+            {
+                Tile = tile;
+                Snapshot = snapshot;
+                HeightField = heightField;
+                AlphaField = alphaField;
+                DetailField = detailField;
+                LayerIndex = layerIndex;
+            }
+
+            public TerrainTile Tile { get; }
+
+            public TerrainSnapshot Snapshot { get; }
+
+            public RoadField HeightField { get; }
+
+            public RoadField AlphaField { get; }
+
+            public RoadField DetailField { get; }
+
+            public int LayerIndex { get; }
+        }
+
         #region Build
 
         /// <summary>
         /// Paints the road on every tile it crosses and stores one snapshot per touched tile.
         /// Returns the number of touched tiles; tiles the road does not reach are left untouched.
-        /// The pass stops as soon as <paramref name="step"/> returns false, keeping the snapshots of the
-        /// tiles already painted so a partial apply can still be reverted.
+        /// Heights are applied and synced on every touched tile before any alphamap texture is written,
+        /// so listeners of OnTerrainChanged(Heightmap) (such as procedural terrain painters that repaint
+        /// a 1-texel neighbour border via TerrainPaintUtility) cannot overwrite an already-painted seam.
         /// </summary>
         public int Build(IReadOnlyList<TerrainTile> tiles, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, SplineRoadData data, RoadBuildStep step = null)
         {
@@ -54,20 +80,25 @@ namespace NextnityStudio.SplineRoad
             data.ClearSnapshots();
 
             var context = new BuildContext(polylines, profile);
-            var built = 0;
+            var prepared = new List<PreparedTile>();
 
             for (var i = 0; i < tiles.Count; i++)
             {
                 if (step != null && !step(i, DescribeTile(tiles[i]))) break;
 
-                var snapshot = new TerrainSnapshot();
-                if (!BuildTile(tiles[i], polylines, profile, context, snapshot)) continue;
+                if (!TryPrepareTile(tiles[i], polylines, profile, out var item)) continue;
 
-                data.AddTerrainSnapshot(tiles[i].Data, snapshot);
-                built++;
+                ApplyHeights(item.Tile.Data, item.Tile.Position.y, item.HeightField, profile);
+                data.AddTerrainSnapshot(item.Tile.Data, item.Snapshot);
+                prepared.Add(item);
             }
 
-            return built;
+            for (var i = 0; i < prepared.Count; i++)
+            {
+                ApplySurfaceAndVegetation(prepared[i], polylines, profile, context);
+            }
+
+            return prepared.Count;
         }
 
         private static string DescribeTile(TerrainTile tile)
@@ -75,8 +106,10 @@ namespace NextnityStudio.SplineRoad
             return tile.Data != null ? tile.Data.name : "terrain";
         }
 
-        private bool BuildTile(TerrainTile tile, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, BuildContext context, TerrainSnapshot snapshot)
+        private bool TryPrepareTile(TerrainTile tile, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, out PreparedTile prepared)
         {
+            prepared = default;
+
             var terrainData = tile.Data;
             if (terrainData == null) return false;
 
@@ -104,25 +137,34 @@ namespace NextnityStudio.SplineRoad
                 detailField = _rasterizer.Rasterize(detailGrid, polylines, profile.Reach);
             }
 
+            var snapshot = new TerrainSnapshot();
             snapshot.Capture(terrainData, heightField.Rect, alphaField?.Rect ?? default, detailField?.Rect ?? default);
 
-            ApplyHeights(terrainData, tile.Position.y, heightField, profile);
+            prepared = new PreparedTile(tile, snapshot, heightField, alphaField, detailField, layerIndex);
+            return true;
+        }
 
-            if (alphaField != null)
+        private void ApplySurfaceAndVegetation(PreparedTile item, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, BuildContext context)
+        {
+            var tile = item.Tile;
+            var terrainData = tile.Data;
+            var snapshot = item.Snapshot;
+
+            if (item.AlphaField != null)
             {
-                ApplyTexture(terrainData, alphaField, profile, layerIndex);
+                ApplyTexture(terrainData, item.AlphaField, profile, item.LayerIndex);
             }
 
-            if (detailField != null)
+            if (item.DetailField != null)
             {
                 if (profile.ClearDetails)
                 {
-                    _vegetationClearer.ClearDetails(terrainData, detailField, profile.VegetationRadius);
+                    _vegetationClearer.ClearDetails(terrainData, item.DetailField, profile.VegetationRadius);
                 }
 
                 if (HasRoadsideRule(profile, RoadsideKind.Detail))
                 {
-                    _detailScatterer.Scatter(terrainData, detailField, profile);
+                    _detailScatterer.Scatter(terrainData, item.DetailField, profile);
                 }
             }
 
@@ -135,8 +177,6 @@ namespace NextnityStudio.SplineRoad
             {
                 snapshot.StorePlacedTrees(_treeScatterer.Scatter(tile, polylines, context.TreeIndex, profile, context.TreeGrid));
             }
-
-            return true;
         }
 
         private bool HasDetails(TerrainData terrainData)

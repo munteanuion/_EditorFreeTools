@@ -206,12 +206,15 @@ namespace NextnityStudio.SplineRoad
 
             var entries = _data.TerrainSnapshots;
             var cancelled = false;
+            var heightsRestored = 0;
 
             using (var progress = new RoadProgressReporter(entries.Count, RevertProgressTitle))
             {
                 for (var i = 0; i < entries.Count; i++)
                 {
                     if (!progress.Report(i, DescribeEntry(entries[i]))) break;
+
+                    heightsRestored = i + 1;
 
                     var entry = entries[i];
                     if (entry == null || entry.Snapshot == null || !entry.Snapshot.HasData) continue;
@@ -223,9 +226,20 @@ namespace NextnityStudio.SplineRoad
                         continue;
                     }
 
-                    if (!entry.Snapshot.Restore(terrainData))
+                    if (!entry.Snapshot.RestoreHeights(terrainData))
                     {
                         LogError($"Terrain '{terrainData.name}' resolution or layers changed since the road was applied. Its snapshot was discarded.");
+                    }
+                }
+
+                for (var i = 0; i < heightsRestored; i++)
+                {
+                    var entry = entries[i];
+                    if (entry == null || entry.Snapshot == null || !entry.Snapshot.HasData || entry.TerrainData == null) continue;
+
+                    if (!entry.Snapshot.RestoreSurfaceAndVegetation(entry.TerrainData))
+                    {
+                        LogError($"Terrain '{entry.TerrainData.name}' resolution or layers changed since the road was applied. Its snapshot was discarded.");
                     }
                 }
 
