@@ -265,7 +265,7 @@ namespace NextnityStudio.SplineRoad.EditorTools
             {
                 if (GUILayout.Button("Apply Road", GUILayout.Height(ApplyButtonHeight)))
                 {
-                    RunOnTerrains(painter, ApplyUndoName, painter.ApplyRoad);
+                    RunOnTerrains(painter, ApplyUndoName, () => painter.ApplyRoad());
                 }
 
                 using (new EditorGUI.DisabledScope(!painter.HasAppliedRoad))
@@ -273,12 +273,12 @@ namespace NextnityStudio.SplineRoad.EditorTools
                 {
                     if (GUILayout.Button("Revert"))
                     {
-                        RunOnTerrains(painter, RevertUndoName, painter.RevertRoad);
+                        RunOnTerrains(painter, RevertUndoName, () => painter.RevertRoad());
                     }
 
                     if (GUILayout.Button("Bake"))
                     {
-                        RunOnTerrains(painter, BakeUndoName, painter.BakeRoad);
+                        RunOnTerrains(painter, BakeUndoName, () => painter.BakeRoad());
                     }
                 }
 

@@ -9,6 +9,9 @@ namespace NextnityStudio.SplineRoad
     {
         private const int NoLayer = -1;
 
+        /// <summary>Called before each tile is built. Return false to stop the pass (user cancelled).</summary>
+        public delegate bool RoadBuildStep(int completedSteps, string step);
+
         private readonly RoadFieldRasterizer _rasterizer = new RoadFieldRasterizer();
         private readonly VegetationClearer _vegetationClearer = new VegetationClearer();
         private readonly RoadsideDetailScatterer _detailScatterer = new RoadsideDetailScatterer();
@@ -38,8 +41,10 @@ namespace NextnityStudio.SplineRoad
         /// <summary>
         /// Paints the road on every tile it crosses and stores one snapshot per touched tile.
         /// Returns the number of touched tiles; tiles the road does not reach are left untouched.
+        /// The pass stops as soon as <paramref name="step"/> returns false, keeping the snapshots of the
+        /// tiles already painted so a partial apply can still be reverted.
         /// </summary>
-        public int Build(IReadOnlyList<TerrainTile> tiles, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, SplineRoadData data)
+        public int Build(IReadOnlyList<TerrainTile> tiles, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, SplineRoadData data, RoadBuildStep step = null)
         {
             if (tiles == null) throw new ArgumentNullException(nameof(tiles));
             if (polylines == null) throw new ArgumentNullException(nameof(polylines));
@@ -53,6 +58,8 @@ namespace NextnityStudio.SplineRoad
 
             for (var i = 0; i < tiles.Count; i++)
             {
+                if (step != null && !step(i, DescribeTile(tiles[i]))) break;
+
                 var snapshot = new TerrainSnapshot();
                 if (!BuildTile(tiles[i], polylines, profile, context, snapshot)) continue;
 
@@ -61,6 +68,11 @@ namespace NextnityStudio.SplineRoad
             }
 
             return built;
+        }
+
+        private static string DescribeTile(TerrainTile tile)
+        {
+            return tile.Data != null ? tile.Data.name : "terrain";
         }
 
         private bool BuildTile(TerrainTile tile, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, BuildContext context, TerrainSnapshot snapshot)

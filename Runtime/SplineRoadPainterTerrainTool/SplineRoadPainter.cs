@@ -18,6 +18,8 @@ namespace NextnityStudio.SplineRoad
         public const string PreviewFieldName = nameof(_preview);
 
         private const string LogPrefix = "SplineRoad";
+        private const string ApplyProgressTitle = "Spline Road - Apply";
+        private const string RevertProgressTitle = "Spline Road - Revert";
 
         [SerializeField, Tooltip("Legacy single terrain, only kept so scenes painted before multi-terrain support still revert. The Terrains list wins when it is not empty.")]
         private Terrain _terrain;
@@ -140,7 +142,11 @@ namespace NextnityStudio.SplineRoad
         {
             if (!Validate()) return;
 
-            RevertRoad();
+            if (!RevertRoad())
+            {
+                LogWarning("Apply aborted: reverting the previous road was cancelled.");
+                return;
+            }
 
             var tiles = ResolveTiles();
             if (tiles.Count == 0)
@@ -158,7 +164,22 @@ namespace NextnityStudio.SplineRoad
                 return;
             }
 
-            if (_builder.Build(tiles, polylines, profile, _data) == 0)
+            var built = 0;
+            var cancelled = false;
+
+            using (var progress = new RoadProgressReporter(tiles.Count, ApplyProgressTitle))
+            {
+                built = _builder.Build(tiles, polylines, profile, _data, progress.Report);
+                cancelled = progress.Cancelled;
+            }
+
+            if (cancelled)
+            {
+                LogWarning($"Apply cancelled after {built} of {tiles.Count} tile(s). The tiles already painted keep the road; press Revert to undo them.");
+                return;
+            }
+
+            if (built == 0)
             {
                 LogError("The spline does not cross any assigned terrain. Nothing was painted.");
                 return;
@@ -175,32 +196,57 @@ namespace NextnityStudio.SplineRoad
         }
 #endif
 
-        public void RevertRoad()
+        /// <summary>
+        /// Restores every tile painted by the current snapshot list.
+        /// Returns false when the user cancelled, in which case the snapshots are kept so Revert can be run again.
+        /// </summary>
+        public bool RevertRoad()
         {
-            if (_data == null) return;
+            if (_data == null) return true;
 
             var entries = _data.TerrainSnapshots;
+            var cancelled = false;
 
-            for (var i = 0; i < entries.Count; i++)
+            using (var progress = new RoadProgressReporter(entries.Count, RevertProgressTitle))
             {
-                var entry = entries[i];
-                if (entry == null || entry.Snapshot == null || !entry.Snapshot.HasData) continue;
-
-                var terrainData = entry.TerrainData;
-                if (terrainData == null)
+                for (var i = 0; i < entries.Count; i++)
                 {
-                    LogError("A terrain painted by this road no longer exists, so its part of the road could not be reverted.");
-                    continue;
+                    if (!progress.Report(i, DescribeEntry(entries[i]))) break;
+
+                    var entry = entries[i];
+                    if (entry == null || entry.Snapshot == null || !entry.Snapshot.HasData) continue;
+
+                    var terrainData = entry.TerrainData;
+                    if (terrainData == null)
+                    {
+                        LogError("A terrain painted by this road no longer exists, so its part of the road could not be reverted.");
+                        continue;
+                    }
+
+                    if (!entry.Snapshot.Restore(terrainData))
+                    {
+                        LogError($"Terrain '{terrainData.name}' resolution or layers changed since the road was applied. Its snapshot was discarded.");
+                    }
                 }
 
-                if (!entry.Snapshot.Restore(terrainData))
-                {
-                    LogError($"Terrain '{terrainData.name}' resolution or layers changed since the road was applied. Its snapshot was discarded.");
-                }
+                cancelled = progress.Cancelled;
+            }
+
+            if (cancelled)
+            {
+                LogWarning("Revert cancelled. Tiles already restored are back to their original state, the rest still hold the road. The snapshot was kept, so press Revert again to finish.");
+                return false;
             }
 
             RestoreLegacySnapshot();
             _data.ClearSnapshots();
+
+            return true;
+        }
+
+        private static string DescribeEntry(TerrainSnapshotEntry entry)
+        {
+            return entry != null && entry.TerrainData != null ? entry.TerrainData.name : "missing terrain";
         }
 
         public void BakeRoad()
@@ -257,6 +303,11 @@ namespace NextnityStudio.SplineRoad
         private void LogError(string message)
         {
             Debug.LogError($"[{LogPrefix}] {message}", this);
+        }
+
+        private void LogWarning(string message)
+        {
+            Debug.LogWarning($"[{LogPrefix}] {message}", this);
         }
     }
 }
