@@ -91,7 +91,10 @@ namespace NextnityStudio.SplineRoad
             if (profile.PaintTexture && profile.RoadLayer != null)
             {
                 layerIndex = EnsureLayer(terrainData, profile.RoadLayer);
-                var alphaGrid = new TerrainGrid(terrainData.alphamapResolution, tile.Min, tile.Size, true);
+                // Corner-aligned (cellCentered = false): texel 0 sits on tile.Min and texel N-1 sits on tile.Max,
+                // so the border texel of one tile and the border texel of its neighbour are evaluated at the exact
+                // same world point and receive the exact same road weight across the seam.
+                var alphaGrid = new TerrainGrid(terrainData.alphamapResolution, tile.Min, tile.Size, false);
                 alphaField = _rasterizer.Rasterize(alphaGrid, polylines, profile.Reach);
             }
 
@@ -207,69 +210,7 @@ namespace NextnityStudio.SplineRoad
                 }
             }
 
-            ClampTileBorders(terrainData, alphas, rect, layerIndex);
             terrainData.SetAlphamaps(rect.x, rect.y, alphas);
-        }
-
-        /// <summary>
-        /// A tile's outermost alphamap texel covers the strip right before the tile border, and the
-        /// neighbour tile paints up to that same border. Where the inner texel is road, the border texel
-        /// gets the same road blend, so the road stays continuous across the seam.
-        /// Texels where the inner one is not road are left exactly as the artist painted them.
-        /// </summary>
-        private static void ClampTileBorders(TerrainData terrainData, float[,,] alphas, RectInt rect, int roadLayer)
-        {
-            if (roadLayer < 0) return;
-
-            var resolution = terrainData.alphamapResolution;
-            var layers = terrainData.alphamapLayers;
-            var width = rect.width;
-            var height = rect.height;
-            if (layers <= 0 || width < 2 || height < 2) return;
-
-            if (rect.x == 0)
-            {
-                for (var y = 0; y < height; y++)
-                {
-                    BlendRoadOnto(alphas, layers, roadLayer, y, 0, y, 1);
-                }
-            }
-
-            if (rect.x + width == resolution)
-            {
-                for (var y = 0; y < height; y++)
-                {
-                    BlendRoadOnto(alphas, layers, roadLayer, y, width - 1, y, width - 2);
-                }
-            }
-
-            if (rect.y == 0)
-            {
-                for (var x = 0; x < width; x++)
-                {
-                    BlendRoadOnto(alphas, layers, roadLayer, 0, x, 1, x);
-                }
-            }
-
-            if (rect.y + height == resolution)
-            {
-                for (var x = 0; x < width; x++)
-                {
-                    BlendRoadOnto(alphas, layers, roadLayer, height - 1, x, height - 2, x);
-                }
-            }
-        }
-
-        private static void BlendRoadOnto(float[,,] alphas, int layers, int roadLayer, int targetY, int targetX, int sourceY, int sourceX)
-        {
-            var weight = alphas[sourceY, sourceX, roadLayer];
-            if (weight <= 0f) return;
-
-            for (var layer = 0; layer < layers; layer++)
-            {
-                var goal = layer == roadLayer ? 1f : 0f;
-                alphas[targetY, targetX, layer] = Mathf.Lerp(alphas[targetY, targetX, layer], goal, weight);
-            }
         }
 
         private int EnsureLayer(TerrainData terrainData, TerrainLayer roadLayer)

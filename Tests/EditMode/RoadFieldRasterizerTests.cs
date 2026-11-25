@@ -55,6 +55,34 @@ namespace NextnityStudio.SplineRoad.Tests
             Assert.AreEqual(8f, profile.JunctionBlendRadius, HeightTolerance);
         }
 
+        [Test]
+        public void CornerAlignedGrids_MatchExactlyAtTheTileSeam()
+        {
+            var size = Vector2.one * GridSize;
+            var west = new TerrainGrid(GridResolution, Vector2.zero, size, false);
+            var east = new TerrainGrid(GridResolution, new Vector2(GridSize, 0f), size, false);
+            var road = new List<Vector3[]>
+            {
+                new[] { new Vector3(GridSize - 3.8f, 0f, 0f), new Vector3(GridSize - 3.8f, 0f, GridSize) }
+            };
+
+            var fieldWest = _rasterizer.Rasterize(west, road, Reach);
+            var fieldEast = _rasterizer.Rasterize(east, road, Reach);
+
+            Assert.IsNotNull(fieldWest);
+            Assert.IsNotNull(fieldEast);
+
+            var last = GridResolution - 1;
+
+            for (var y = 0; y < GridResolution; y++)
+            {
+                var distanceWest = fieldWest.DistanceAt(fieldWest.IndexOf(last, y));
+                var distanceEast = fieldEast.DistanceAt(fieldEast.IndexOf(0, y));
+
+                Assert.AreEqual(distanceWest, distanceEast, 1e-4f, "Border texels on the two sides of a tile seam must see the exact same road distance.");
+            }
+        }
+
         private static TerrainGrid CreateGrid()
         {
             return new TerrainGrid(GridResolution, Vector2.zero, Vector2.one * GridSize, false);
