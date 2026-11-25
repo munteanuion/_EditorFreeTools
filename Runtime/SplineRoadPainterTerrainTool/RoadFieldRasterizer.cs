@@ -90,6 +90,7 @@ namespace NextnityStudio.SplineRoad
     {
         private const float MinSegmentLengthSqr = 1e-8f;
         private const float MinBlendWeight = 1e-6f;
+        private const int NotPainted = int.MaxValue;
 
         public RoadField Rasterize(TerrainGrid grid, IReadOnlyList<Vector3[]> polylines, float reach)
         {
@@ -128,7 +129,8 @@ namespace NextnityStudio.SplineRoad
         /// <summary>
         /// Fills thin unpainted strips that sit between two road arms (a merge, a hairpin, a junction),
         /// so the texture stays continuous where the heights are already blended.
-        /// A cell is filled when there is painted road on both sides of one axis within <paramref name="maxGapWidth"/>.
+        /// A cell is filled when the road on both sides of one axis is within <paramref name="maxGapWidth"/> in total,
+        /// so the pass can never pave the grass between two roads that are further apart than that.
         /// </summary>
         public int FillJunctionGaps(RoadField field, TerrainGrid grid, float paintedRadius, float maxGapWidth)
         {
@@ -141,8 +143,8 @@ namespace NextnityStudio.SplineRoad
             if (width <= 0 || height <= 0) return 0;
 
             var paintedRadiusSqr = paintedRadius * paintedRadius;
-            var stepsX = Mathf.Max(1, Mathf.CeilToInt(maxGapWidth / grid.CellSize.x));
-            var stepsZ = Mathf.Max(1, Mathf.CeilToInt(maxGapWidth / grid.CellSize.y));
+            var gapX = Mathf.Max(1, Mathf.CeilToInt(maxGapWidth / grid.CellSize.x));
+            var gapZ = Mathf.Max(1, Mathf.CeilToInt(maxGapWidth / grid.CellSize.y));
 
             // Snapshot of the mask: a gap is closed based on the road that exists before the fill,
             // so the pass cannot chain-fill its way across the map.
@@ -162,8 +164,17 @@ namespace NextnityStudio.SplineRoad
                     var index = y * width + x;
                     if (painted[index]) continue;
 
-                    var horizontal = HasPaintedOnBothSides(painted, width, height, x, y, stepsX, 1, 0);
-                    if (!horizontal && !HasPaintedOnBothSides(painted, width, height, x, y, stepsZ, 0, 1)) continue;
+                    var left = DistanceToPainted(painted, width, height, x, y, gapX, -1, 0);
+                    var right = DistanceToPainted(painted, width, height, x, y, gapX, 1, 0);
+                    var horizontal = left != NotPainted && right != NotPainted && left + right <= gapX;
+
+                    if (!horizontal)
+                    {
+                        var down = DistanceToPainted(painted, width, height, x, y, gapZ, 0, -1);
+                        var up = DistanceToPainted(painted, width, height, x, y, gapZ, 0, 1);
+
+                        if (down == NotPainted || up == NotPainted || down + up > gapZ) continue;
+                    }
 
                     field.DistanceSqr[index] = 0f;
                     filled++;
@@ -173,23 +184,17 @@ namespace NextnityStudio.SplineRoad
             return filled;
         }
 
-        private static bool HasPaintedOnBothSides(bool[] painted, int width, int height, int x, int y, int steps, int stepX, int stepY)
-        {
-            return HasPainted(painted, width, height, x, y, steps, -stepX, -stepY)
-                   && HasPainted(painted, width, height, x, y, steps, stepX, stepY);
-        }
-
-        private static bool HasPainted(bool[] painted, int width, int height, int x, int y, int steps, int stepX, int stepY)
+        private static int DistanceToPainted(bool[] painted, int width, int height, int x, int y, int steps, int stepX, int stepY)
         {
             for (var i = 1; i <= steps; i++)
             {
                 var nextX = x + stepX * i;
                 var nextY = y + stepY * i;
-                if (nextX < 0 || nextY < 0 || nextX >= width || nextY >= height) return false;
-                if (painted[nextY * width + nextX]) return true;
+                if (nextX < 0 || nextY < 0 || nextX >= width || nextY >= height) break;
+                if (painted[nextY * width + nextX]) return i;
             }
 
-            return false;
+            return NotPainted;
         }
 
         private bool TryGetBounds(IReadOnlyList<Vector3[]> polylines, float reach, out Vector2 min, out Vector2 max)

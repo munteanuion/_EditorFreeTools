@@ -104,6 +104,26 @@ namespace NextnityStudio.SplineRoad.Tests
         }
 
         [Test]
+        public void FillJunctionGaps_UsesTheTotalGapNotHalfOfIt()
+        {
+            TerrainGrid grid = CreateGrid();
+            // 20 m between centerlines and 4.5 m of paint per side -> 11 m of open grass, wider than the 10 m limit.
+            List<Vector3[]> polylines = CreateParallelRoads(20f);
+            const float paintedRadius = 4.5f;
+            const float maxGap = 10f;
+
+            RoadField field = _rasterizer.Rasterize(grid, polylines, paintedRadius + 1f);
+            Assert.IsNotNull(field);
+
+            int middleIndex = IndexAt(field, grid, new Vector2(32f, 32f));
+            float before = field.DistanceAt(middleIndex);
+
+            _rasterizer.FillJunctionGaps(field, grid, paintedRadius, maxGap);
+
+            Assert.AreEqual(before, field.DistanceAt(middleIndex), HeightTolerance, "Only gaps up to maxGapWidth in total may be filled.");
+        }
+
+        [Test]
         public void FillJunctionGaps_DoesNothingWhenDisabled()
         {
             TerrainGrid grid = CreateGrid();

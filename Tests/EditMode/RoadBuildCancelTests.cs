@@ -11,8 +11,8 @@ namespace NextnityStudio.SplineRoad.Tests
         private const float TileSize = 32f;
         private const float TileHeight = 20f;
         private const float RoadHeight = 2f;
-        private const float PaintedHeight = RoadHeight / TileHeight;
-        private const float HeightTolerance = 0.001f;
+        private const float PaintedHeight = RoadHeight; // TerrainData.GetHeight reports world metres, not a normalized value
+        private const float HeightTolerance = 0.01f;
         private const int PaintedCellX = 16;
         private const int PaintedCellY = 8;
         private const int SecondTileCellX = 4;
