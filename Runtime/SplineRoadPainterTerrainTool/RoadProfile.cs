@@ -65,7 +65,6 @@ namespace NextnityStudio.SplineRoad
 
         public float JunctionBlendRadius => Mathf.Max(HalfWidth + _shoulderWidth, _junctionBlendRadius);
 
-
         public bool PaintTexture => _paintTexture;
 
         public TerrainLayer RoadLayer => _roadLayer;
