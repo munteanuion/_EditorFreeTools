@@ -93,12 +93,22 @@ namespace NextnityStudio.SplineRoad
                 layerIndex = EnsureLayer(terrainData, profile.RoadLayer);
                 var alphaGrid = new TerrainGrid(terrainData.alphamapResolution, tile.Min, tile.Size, true);
                 alphaField = _rasterizer.Rasterize(alphaGrid, polylines, profile.Reach);
+
+                if (alphaField != null)
+                {
+                    _rasterizer.FillJunctionGaps(alphaField, alphaGrid, profile.HalfWidth + profile.TextureFeather, profile.JunctionTextureFill);
+                }
             }
 
             if (HasDetails(terrainData) && (profile.ClearDetails || HasRoadsideRule(profile, RoadsideKind.Detail)))
             {
                 var detailGrid = new TerrainGrid(terrainData.detailResolution, tile.Min, tile.Size, true);
                 detailField = _rasterizer.Rasterize(detailGrid, polylines, profile.Reach);
+
+                if (detailField != null)
+                {
+                    _rasterizer.FillJunctionGaps(detailField, detailGrid, profile.VegetationRadius, profile.JunctionTextureFill);
+                }
             }
 
             snapshot.Capture(terrainData, heightField.Rect, alphaField?.Rect ?? default, detailField?.Rect ?? default);
