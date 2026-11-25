@@ -207,17 +207,20 @@ namespace NextnityStudio.SplineRoad
                 }
             }
 
-            ClampTileBorders(terrainData, alphas, rect);
+            ClampTileBorders(terrainData, alphas, rect, layerIndex);
             terrainData.SetAlphamaps(rect.x, rect.y, alphas);
         }
 
         /// <summary>
         /// A tile's outermost alphamap texel covers the strip right before the tile border, and the
-        /// neighbour tile paints up to the same border. Copying the inner texel onto that border texel
-        /// keeps the road continuous across the seam instead of leaving a one texel strip of grass.
+        /// neighbour tile paints up to that same border. Where the inner texel is road, the border texel
+        /// gets the same road blend, so the road stays continuous across the seam.
+        /// Texels where the inner one is not road are left exactly as the artist painted them.
         /// </summary>
-        private static void ClampTileBorders(TerrainData terrainData, float[,,] alphas, RectInt rect)
+        private static void ClampTileBorders(TerrainData terrainData, float[,,] alphas, RectInt rect, int roadLayer)
         {
+            if (roadLayer < 0) return;
+
             var resolution = terrainData.alphamapResolution;
             var layers = terrainData.alphamapLayers;
             var width = rect.width;
@@ -228,10 +231,7 @@ namespace NextnityStudio.SplineRoad
             {
                 for (var y = 0; y < height; y++)
                 {
-                    for (var layer = 0; layer < layers; layer++)
-                    {
-                        alphas[y, 0, layer] = alphas[y, 1, layer];
-                    }
+                    BlendRoadOnto(alphas, layers, roadLayer, y, 0, y, 1);
                 }
             }
 
@@ -239,10 +239,7 @@ namespace NextnityStudio.SplineRoad
             {
                 for (var y = 0; y < height; y++)
                 {
-                    for (var layer = 0; layer < layers; layer++)
-                    {
-                        alphas[y, width - 1, layer] = alphas[y, width - 2, layer];
-                    }
+                    BlendRoadOnto(alphas, layers, roadLayer, y, width - 1, y, width - 2);
                 }
             }
 
@@ -250,10 +247,7 @@ namespace NextnityStudio.SplineRoad
             {
                 for (var x = 0; x < width; x++)
                 {
-                    for (var layer = 0; layer < layers; layer++)
-                    {
-                        alphas[0, x, layer] = alphas[1, x, layer];
-                    }
+                    BlendRoadOnto(alphas, layers, roadLayer, 0, x, 1, x);
                 }
             }
 
@@ -261,11 +255,20 @@ namespace NextnityStudio.SplineRoad
             {
                 for (var x = 0; x < width; x++)
                 {
-                    for (var layer = 0; layer < layers; layer++)
-                    {
-                        alphas[height - 1, x, layer] = alphas[height - 2, x, layer];
-                    }
+                    BlendRoadOnto(alphas, layers, roadLayer, height - 1, x, height - 2, x);
                 }
+            }
+        }
+
+        private static void BlendRoadOnto(float[,,] alphas, int layers, int roadLayer, int targetY, int targetX, int sourceY, int sourceX)
+        {
+            var weight = alphas[sourceY, sourceX, roadLayer];
+            if (weight <= 0f) return;
+
+            for (var layer = 0; layer < layers; layer++)
+            {
+                var goal = layer == roadLayer ? 1f : 0f;
+                alphas[targetY, targetX, layer] = Mathf.Lerp(alphas[targetY, targetX, layer], goal, weight);
             }
         }
 
