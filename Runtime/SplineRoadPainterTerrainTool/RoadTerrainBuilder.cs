@@ -93,22 +93,12 @@ namespace NextnityStudio.SplineRoad
                 layerIndex = EnsureLayer(terrainData, profile.RoadLayer);
                 var alphaGrid = new TerrainGrid(terrainData.alphamapResolution, tile.Min, tile.Size, true);
                 alphaField = _rasterizer.Rasterize(alphaGrid, polylines, profile.Reach);
-
-                if (alphaField != null)
-                {
-                    _rasterizer.FillJunctionGaps(alphaField, alphaGrid, profile.HalfWidth + profile.TextureFeather, profile.JunctionTextureFill);
-                }
             }
 
             if (HasDetails(terrainData) && (profile.ClearDetails || HasRoadsideRule(profile, RoadsideKind.Detail)))
             {
                 var detailGrid = new TerrainGrid(terrainData.detailResolution, tile.Min, tile.Size, true);
                 detailField = _rasterizer.Rasterize(detailGrid, polylines, profile.Reach);
-
-                if (detailField != null)
-                {
-                    _rasterizer.FillJunctionGaps(detailField, detailGrid, profile.VegetationRadius, profile.JunctionTextureFill);
-                }
             }
 
             snapshot.Capture(terrainData, heightField.Rect, alphaField?.Rect ?? default, detailField?.Rect ?? default);
@@ -217,7 +207,66 @@ namespace NextnityStudio.SplineRoad
                 }
             }
 
+            ClampTileBorders(terrainData, alphas, rect);
             terrainData.SetAlphamaps(rect.x, rect.y, alphas);
+        }
+
+        /// <summary>
+        /// A tile's outermost alphamap texel covers the strip right before the tile border, and the
+        /// neighbour tile paints up to the same border. Copying the inner texel onto that border texel
+        /// keeps the road continuous across the seam instead of leaving a one texel strip of grass.
+        /// </summary>
+        private static void ClampTileBorders(TerrainData terrainData, float[,,] alphas, RectInt rect)
+        {
+            var resolution = terrainData.alphamapResolution;
+            var layers = terrainData.alphamapLayers;
+            var width = rect.width;
+            var height = rect.height;
+            if (layers <= 0 || width < 2 || height < 2) return;
+
+            if (rect.x == 0)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    for (var layer = 0; layer < layers; layer++)
+                    {
+                        alphas[y, 0, layer] = alphas[y, 1, layer];
+                    }
+                }
+            }
+
+            if (rect.x + width == resolution)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    for (var layer = 0; layer < layers; layer++)
+                    {
+                        alphas[y, width - 1, layer] = alphas[y, width - 2, layer];
+                    }
+                }
+            }
+
+            if (rect.y == 0)
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    for (var layer = 0; layer < layers; layer++)
+                    {
+                        alphas[0, x, layer] = alphas[1, x, layer];
+                    }
+                }
+            }
+
+            if (rect.y + height == resolution)
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    for (var layer = 0; layer < layers; layer++)
+                    {
+                        alphas[height - 1, x, layer] = alphas[height - 2, x, layer];
+                    }
+                }
+            }
         }
 
         private int EnsureLayer(TerrainData terrainData, TerrainLayer roadLayer)

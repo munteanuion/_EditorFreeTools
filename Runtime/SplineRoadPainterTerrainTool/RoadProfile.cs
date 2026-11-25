@@ -16,7 +16,6 @@ namespace NextnityStudio.SplineRoad
 
         private const float Half = 0.5f;
         private const float DefaultJunctionBlendRadius = 8f;
-        private const float DefaultJunctionTextureFill = 10f;
 
         [Header("Shape")]
         [SerializeField, Min(0.5f)] private float _width = 6f;
@@ -33,8 +32,6 @@ namespace NextnityStudio.SplineRoad
         [Header("Intersections")]
         [Tooltip("Radius around road centerlines where heights from different splines are blended. The effective radius is never smaller than road half-width + shoulder width.")]
         [SerializeField, Min(0f)] private float _junctionBlendRadius = DefaultJunctionBlendRadius;
-        [Tooltip("Width (m) of the strip left between two road arms that merge or run close (hairpin, junction) that gets filled with road texture. Heights are already blended there. Set 0 to disable.")]
-        [SerializeField, Min(0f)] private float _junctionTextureFill = DefaultJunctionTextureFill;
 
         [Header("Texture")]
         [SerializeField] private bool _paintTexture = true;
@@ -68,7 +65,6 @@ namespace NextnityStudio.SplineRoad
 
         public float JunctionBlendRadius => Mathf.Max(HalfWidth + _shoulderWidth, _junctionBlendRadius);
 
-        public float JunctionTextureFill => _junctionTextureFill;
 
         public bool PaintTexture => _paintTexture;
 
