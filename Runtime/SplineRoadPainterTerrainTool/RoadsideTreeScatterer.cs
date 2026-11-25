@@ -22,6 +22,64 @@ namespace NextnityStudio.SplineRoad
         public int PrototypeIndex { get; }
     }
 
+    /// <summary>
+    /// World-space keep-out table for tree placements. One instance is shared by every terrain tile of an
+    /// apply pass, so trees on the border of two tiles are still separated instead of landing on top of each other.
+    /// </summary>
+    public sealed class TreeSeparationGrid
+    {
+        private const float MinCellSize = 1f;
+        private const int KeyShift = 32;
+
+        private readonly float _cellSize;
+        private readonly Dictionary<long, List<Vector2>> _cells = new Dictionary<long, List<Vector2>>();
+
+        public TreeSeparationGrid(float maxRadius)
+        {
+            _cellSize = Mathf.Max(maxRadius, MinCellSize);
+        }
+
+        public bool IsTooClose(Vector2 point, float radius)
+        {
+            if (radius <= 0f) return false;
+
+            var centerX = Mathf.FloorToInt(point.x / _cellSize);
+            var centerY = Mathf.FloorToInt(point.y / _cellSize);
+            var range = Mathf.CeilToInt(radius / _cellSize);
+            var radiusSqr = radius * radius;
+
+            for (var y = centerY - range; y <= centerY + range; y++)
+            {
+                for (var x = centerX - range; x <= centerX + range; x++)
+                {
+                    if (!_cells.TryGetValue(KeyOf(x, y), out var list)) continue;
+
+                    for (var i = 0; i < list.Count; i++)
+                    {
+                        if ((list[i] - point).sqrMagnitude < radiusSqr) return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        public void Add(Vector2 point)
+        {
+            var key = KeyOf(Mathf.FloorToInt(point.x / _cellSize), Mathf.FloorToInt(point.y / _cellSize));
+
+            if (!_cells.TryGetValue(key, out var list))
+            {
+                list = new List<Vector2>();
+                _cells[key] = list;
+            }
+
+            list.Add(point);
+        }
+
+        private long KeyOf(int x, int y) => ((long)x << KeyShift) | (uint)y;
+    }
+
     public sealed class RoadsideTreeScatterer
     {
         private const float FullCircle = Mathf.PI * 2f;
@@ -31,59 +89,6 @@ namespace NextnityStudio.SplineRoad
         private const float SignedScale = 2f;
         private const float SideRight = 1f;
         private const float SideLeft = -1f;
-        private const int KeyShift = 32;
-        private const float MinCellSize = 1f;
-
-        private sealed class SeparationGrid
-        {
-            private readonly float _cellSize;
-            private readonly Dictionary<long, List<Vector2>> _cells = new Dictionary<long, List<Vector2>>();
-
-            public SeparationGrid(float maxRadius)
-            {
-                _cellSize = Mathf.Max(maxRadius, MinCellSize);
-            }
-
-            public bool IsTooClose(Vector2 point, float radius)
-            {
-                if (radius <= 0f) return false;
-
-                var centerX = Mathf.FloorToInt(point.x / _cellSize);
-                var centerY = Mathf.FloorToInt(point.y / _cellSize);
-                var range = Mathf.CeilToInt(radius / _cellSize);
-                var radiusSqr = radius * radius;
-
-                for (var y = centerY - range; y <= centerY + range; y++)
-                {
-                    for (var x = centerX - range; x <= centerX + range; x++)
-                    {
-                        if (!_cells.TryGetValue(KeyOf(x, y), out var list)) continue;
-
-                        for (var i = 0; i < list.Count; i++)
-                        {
-                            if ((list[i] - point).sqrMagnitude < radiusSqr) return true;
-                        }
-                    }
-                }
-
-                return false;
-            }
-
-            public void Add(Vector2 point)
-            {
-                var key = KeyOf(Mathf.FloorToInt(point.x / _cellSize), Mathf.FloorToInt(point.y / _cellSize));
-
-                if (!_cells.TryGetValue(key, out var list))
-                {
-                    list = new List<Vector2>();
-                    _cells[key] = list;
-                }
-
-                list.Add(point);
-            }
-
-            private long KeyOf(int x, int y) => ((long)x << KeyShift) | (uint)y;
-        }
 
         private sealed class Placement
         {
@@ -106,10 +111,9 @@ namespace NextnityStudio.SplineRoad
 
         private sealed class Context
         {
-            public Context(TerrainData terrainData, Vector3 terrainPosition, PolylineIndex index, RoadProfile profile, Random random, List<Placement> placed, SeparationGrid grid, List<int> validPrototypes)
+            public Context(TerrainTile tile, PolylineIndex index, RoadProfile profile, Random random, List<Placement> placed, TreeSeparationGrid grid, List<int> validPrototypes)
             {
-                TerrainData = terrainData;
-                TerrainPosition = terrainPosition;
+                Tile = tile;
                 Index = index;
                 Profile = profile;
                 Random = random;
@@ -118,9 +122,7 @@ namespace NextnityStudio.SplineRoad
                 ValidPrototypes = validPrototypes;
             }
 
-            public TerrainData TerrainData { get; }
-
-            public Vector3 TerrainPosition { get; }
+            public TerrainTile Tile { get; }
 
             public PolylineIndex Index { get; }
 
@@ -130,21 +132,22 @@ namespace NextnityStudio.SplineRoad
 
             public List<Placement> Placed { get; }
 
-            public SeparationGrid Grid { get; }
+            public TreeSeparationGrid Grid { get; }
 
             public List<int> ValidPrototypes { get; }
         }
 
         #region Scatter
 
-        public List<TreeRecord> Scatter(TerrainData terrainData, Vector3 terrainPosition, IReadOnlyList<Vector3[]> polylines, PolylineIndex index, RoadProfile profile)
+        public List<TreeRecord> Scatter(TerrainTile tile, IReadOnlyList<Vector3[]> polylines, PolylineIndex index, RoadProfile profile, TreeSeparationGrid grid)
         {
-            if (terrainData == null) throw new ArgumentNullException(nameof(terrainData));
+            if (tile.Data == null) throw new ArgumentException("The terrain tile has no TerrainData.", nameof(tile));
             if (polylines == null) throw new ArgumentNullException(nameof(polylines));
             if (index == null) throw new ArgumentNullException(nameof(index));
             if (profile == null) throw new ArgumentNullException(nameof(profile));
 
-            var placements = Compute(terrainData, terrainPosition, polylines, index, profile);
+            var separation = grid ?? new TreeSeparationGrid(MaxSeparation(profile));
+            var placements = Compute(tile, polylines, index, profile, separation);
             var records = new List<TreeRecord>(placements.Count);
 
             for (var i = 0; i < placements.Count; i++)
@@ -152,30 +155,72 @@ namespace NextnityStudio.SplineRoad
                 records.Add(new TreeRecord(placements[i].Instance));
             }
 
-            AppendToTerrain(terrainData, records);
+            AppendToTerrain(tile.Data, records);
 
             return records;
         }
 
-        public List<TreePlacement> PreviewPlacements(TerrainData terrainData, Vector3 terrainPosition, IReadOnlyList<Vector3[]> polylines, RoadProfile profile)
+        /// <summary>Placements for every tile, computed with one shared separation grid so the preview matches the apply.</summary>
+        public List<TreePlacement> PreviewPlacements(IReadOnlyList<TerrainTile> tiles, IReadOnlyList<Vector3[]> polylines, RoadProfile profile)
         {
-            if (terrainData == null) throw new ArgumentNullException(nameof(terrainData));
+            if (tiles == null) throw new ArgumentNullException(nameof(tiles));
             if (polylines == null) throw new ArgumentNullException(nameof(polylines));
             if (profile == null) throw new ArgumentNullException(nameof(profile));
 
             var preview = new List<TreePlacement>();
-            if (!HasTreeRules(profile) || terrainData.treePrototypes.Length == 0) return preview;
+            if (!HasTreeRules(profile) || polylines.Count == 0) return preview;
+
+            var margin = KeepOutRadius(profile) + MaxSeparation(profile);
+            if (!TryGetBounds(polylines, margin, out var min, out var max)) return preview;
 
             var index = new PolylineIndex(polylines, KeepOutRadius(profile));
-            var placements = Compute(terrainData, terrainPosition, polylines, index, profile);
+            var grid = new TreeSeparationGrid(MaxSeparation(profile));
 
-            for (var i = 0; i < placements.Count; i++)
+            for (var t = 0; t < tiles.Count; t++)
             {
-                var placement = placements[i];
-                preview.Add(new TreePlacement(placement.WorldPosition, placement.Scale, placement.PrototypeIndex));
+                var tile = tiles[t];
+                if (tile.Data == null || tile.Data.treePrototypes.Length == 0) continue;
+
+                // Skip tiles the road does not reach: a world made of many tiles would otherwise
+                // run the whole scatter for every tile on every scene repaint.
+                if (!tile.Overlaps(min, max)) continue;
+
+                var placements = Compute(tile, polylines, index, profile, grid);
+
+                for (var i = 0; i < placements.Count; i++)
+                {
+                    var placement = placements[i];
+                    preview.Add(new TreePlacement(placement.WorldPosition, placement.Scale, placement.PrototypeIndex));
+                }
             }
 
             return preview;
+        }
+
+        private static bool TryGetBounds(IReadOnlyList<Vector3[]> polylines, float margin, out Vector2 min, out Vector2 max)
+        {
+            min = new Vector2(float.MaxValue, float.MaxValue);
+            max = new Vector2(float.MinValue, float.MinValue);
+            var found = false;
+
+            for (var p = 0; p < polylines.Count; p++)
+            {
+                var points = polylines[p];
+
+                for (var i = 0; i < points.Length; i++)
+                {
+                    var flat = new Vector2(points[i].x, points[i].z);
+                    min = Vector2.Min(min, flat);
+                    max = Vector2.Max(max, flat);
+                    found = true;
+                }
+            }
+
+            var offset = new Vector2(margin, margin);
+            min -= offset;
+            max += offset;
+
+            return found;
         }
 
         public static float KeepOutRadius(RoadProfile profile)
@@ -197,36 +242,10 @@ namespace NextnityStudio.SplineRoad
             return Mathf.Max(keepOut, 0f);
         }
 
-        private List<Placement> Compute(TerrainData terrainData, Vector3 terrainPosition, IReadOnlyList<Vector3[]> polylines, PolylineIndex index, RoadProfile profile)
+        public static float MaxSeparation(RoadProfile profile)
         {
-            var placed = new List<Placement>();
-            var prototypeCount = terrainData.treePrototypes.Length;
-            var rules = profile.Roadside;
-            if (rules == null) return placed;
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
 
-            var grid = new SeparationGrid(MaxSeparation(profile));
-
-            for (var r = 0; r < rules.Count; r++)
-            {
-                var rule = rules[r];
-                if (rule == null || !rule.Enabled || rule.Kind != RoadsideKind.Tree) continue;
-
-                var valid = rule.ValidPrototypes(prototypeCount);
-                if (valid.Count == 0) continue;
-
-                for (var p = 0; p < polylines.Count; p++)
-                {
-                    var random = new Random(HashCode.Combine(rule.Seed, p, r));
-                    var context = new Context(terrainData, terrainPosition, index, profile, random, placed, grid, valid);
-                    ScatterAlong(polylines[p], rule, context);
-                }
-            }
-
-            return placed;
-        }
-
-        private float MaxSeparation(RoadProfile profile)
-        {
             var max = 0f;
             var rules = profile.Roadside;
             if (rules == null) return max;
@@ -242,8 +261,10 @@ namespace NextnityStudio.SplineRoad
             return max;
         }
 
-        private bool HasTreeRules(RoadProfile profile)
+        public static bool HasTreeRules(RoadProfile profile)
         {
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+
             var rules = profile.Roadside;
             if (rules == null) return false;
 
@@ -254,6 +275,32 @@ namespace NextnityStudio.SplineRoad
             }
 
             return false;
+        }
+
+        private List<Placement> Compute(TerrainTile tile, IReadOnlyList<Vector3[]> polylines, PolylineIndex index, RoadProfile profile, TreeSeparationGrid grid)
+        {
+            var placed = new List<Placement>();
+            var prototypeCount = tile.Data.treePrototypes.Length;
+            var rules = profile.Roadside;
+            if (rules == null) return placed;
+
+            for (var r = 0; r < rules.Count; r++)
+            {
+                var rule = rules[r];
+                if (rule == null || !rule.Enabled || rule.Kind != RoadsideKind.Tree) continue;
+
+                var valid = rule.ValidPrototypes(prototypeCount);
+                if (valid.Count == 0) continue;
+
+                for (var p = 0; p < polylines.Count; p++)
+                {
+                    var random = new Random(HashCode.Combine(rule.Seed, p, r));
+                    var context = new Context(tile, index, profile, random, placed, grid, valid);
+                    ScatterAlong(polylines[p], rule, context);
+                }
+            }
+
+            return placed;
         }
 
         private void ScatterAlong(Vector3[] points, RoadsideRule rule, Context context)
@@ -317,7 +364,7 @@ namespace NextnityStudio.SplineRoad
 
             if (chanceRoll > rule.Chance) return;
 
-            var terrainData = context.TerrainData;
+            var tile = context.Tile;
             var half = context.Profile.HalfWidth;
             var distance = half + Mathf.Lerp(rule.OffsetMin, rule.OffsetMax, offsetRoll);
             var alongOffset = (alongRoll * SignedScale - 1f) * rule.AlongJitter * rule.Spacing * Half;
@@ -326,13 +373,13 @@ namespace NextnityStudio.SplineRoad
             if (context.Index.IsWithin(point, Mathf.Max(0f, half + rule.OffsetMin - KeepOutTolerance))) return;
             if (context.Grid.IsTooClose(point, rule.MinSeparation)) return;
 
-            var size = terrainData.size;
-            var normalizedX = (point.x - context.TerrainPosition.x) / size.x;
-            var normalizedZ = (point.y - context.TerrainPosition.z) / size.z;
+            // A tree belongs to exactly one tile: the one whose terrain holds this position.
+            var normalizedX = (point.x - tile.Min.x) / tile.Size.x;
+            var normalizedZ = (point.y - tile.Min.y) / tile.Size.y;
             if (normalizedX < 0f || normalizedX > 1f || normalizedZ < 0f || normalizedZ > 1f) return;
-            if (terrainData.GetSteepness(normalizedX, normalizedZ) > rule.MaxSlope) return;
+            if (tile.Data.GetSteepness(normalizedX, normalizedZ) > rule.MaxSlope) return;
 
-            var height = terrainData.GetInterpolatedHeight(normalizedX, normalizedZ) + rule.HeightOffset;
+            var height = tile.Data.GetInterpolatedHeight(normalizedX, normalizedZ) + rule.HeightOffset;
             var widthScale = Mathf.Lerp(rule.ScaleMin, rule.ScaleMax, scaleRoll);
             var heightScale = widthScale * (1f + (heightRoll * SignedScale - 1f) * rule.HeightVariation);
             var shade = 1f - tintRoll * rule.TintVariation;
@@ -341,7 +388,7 @@ namespace NextnityStudio.SplineRoad
 
             var tree = new TreeInstance
             {
-                position = new Vector3(normalizedX, Mathf.Clamp01(height / size.y), normalizedZ),
+                position = new Vector3(normalizedX, Mathf.Clamp01(height / tile.Data.size.y), normalizedZ),
                 prototypeIndex = prototype,
                 widthScale = widthScale,
                 heightScale = heightScale,
@@ -350,7 +397,7 @@ namespace NextnityStudio.SplineRoad
                 lightmapColor = Color.white
             };
 
-            var worldPosition = new Vector3(point.x, context.TerrainPosition.y + height, point.y);
+            var worldPosition = new Vector3(point.x, tile.Position.y + height, point.y);
             context.Placed.Add(new Placement(tree, worldPosition, widthScale, prototype));
             context.Grid.Add(point);
         }
@@ -374,5 +421,4 @@ namespace NextnityStudio.SplineRoad
         #endregion
     }
 }
-
 #endif

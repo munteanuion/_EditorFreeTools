@@ -42,21 +42,19 @@ namespace NextnityStudio.SplineRoad.EditorTools
         private readonly Vector3[] _quad = new Vector3[4];
         private readonly RoadsideTreeScatterer _treePreview = new RoadsideTreeScatterer();
 
-        private Terrain _terrain;
         private RoadProfile _profile;
         private RoadPreviewSettings _settings;
-        private float _baseHeight;
+        private TerrainHeightSampler _sampler;
 
         #region Draw
 
-        public void Draw(IReadOnlyList<Vector3[]> polylines, Terrain terrain, RoadProfile profile, RoadPreviewSettings settings)
+        public void Draw(IReadOnlyList<Vector3[]> polylines, IReadOnlyList<TerrainTile> tiles, RoadProfile profile, RoadPreviewSettings settings)
         {
-            if (polylines == null || terrain == null || profile == null || settings == null) return;
+            if (polylines == null || tiles == null || tiles.Count == 0 || profile == null || settings == null) return;
 
-            _terrain = terrain;
             _profile = profile;
             _settings = settings;
-            _baseHeight = terrain.transform.position.y;
+            _sampler = new TerrainHeightSampler(tiles);
 
             var originalColor = Handles.color;
 
@@ -67,7 +65,7 @@ namespace NextnityStudio.SplineRoad.EditorTools
 
             if (_settings.ShowTreePreview)
             {
-                DrawTreePlacements(polylines);
+                DrawTreePlacements(polylines, tiles);
             }
 
             Handles.color = originalColor;
@@ -233,9 +231,9 @@ namespace NextnityStudio.SplineRoad.EditorTools
             Handles.DrawAAPolyLine(LineWidth, line.ToArray());
         }
 
-        private void DrawTreePlacements(IReadOnlyList<Vector3[]> polylines)
+        private void DrawTreePlacements(IReadOnlyList<Vector3[]> polylines, IReadOnlyList<TerrainTile> tiles)
         {
-            var placements = _treePreview.PreviewPlacements(_terrain.terrainData, _terrain.transform.position, polylines, _profile);
+            var placements = _treePreview.PreviewPlacements(tiles, polylines, _profile);
             if (placements.Count == 0) return;
 
             Handles.color = _roadsideColor;
@@ -289,7 +287,7 @@ namespace NextnityStudio.SplineRoad.EditorTools
 
         private Vector3 OnTerrain(Vector3 position)
         {
-            position.y = _terrain.SampleHeight(position) + _baseHeight;
+            position.y = _sampler.Sample(position);
             return position;
         }
 

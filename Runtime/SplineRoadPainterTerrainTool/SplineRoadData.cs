@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.Splines;
 
 namespace NextnityStudio.SplineRoad
@@ -15,13 +16,72 @@ namespace NextnityStudio.SplineRoad
         [SerializeField] private Vector3 _position;
         [SerializeField] private Quaternion _rotation = Quaternion.identity;
         [SerializeField] private Vector3 _localScale = Vector3.one;
-        [SerializeField] private TerrainSnapshot _snapshot = new TerrainSnapshot();
+
+        [FormerlySerializedAs("_snapshot")]
+        [SerializeField, Tooltip("Snapshot of a road applied by the single-terrain version of this tool. New applies store one entry per terrain instead.")]
+        private TerrainSnapshot _legacySnapshot = new TerrainSnapshot();
+
+        [SerializeField] private List<TerrainSnapshotEntry> _terrainSnapshots = new List<TerrainSnapshotEntry>();
 
         public RoadProfile Profile => _profile;
 
-        public TerrainSnapshot Snapshot => _snapshot;
+        public IReadOnlyList<TerrainSnapshotEntry> TerrainSnapshots => _terrainSnapshots;
+
+        public TerrainSnapshot LegacySnapshot => _legacySnapshot;
+
+        public bool HasLegacySnapshot => _legacySnapshot != null && _legacySnapshot.HasData;
 
         public bool HasSavedSpline => _splines.Count > 0;
+
+        public bool HasSnapshot
+        {
+            get
+            {
+                if (HasLegacySnapshot) return true;
+
+                for (var i = 0; i < _terrainSnapshots.Count; i++)
+                {
+                    var entry = _terrainSnapshots[i];
+                    if (entry != null && entry.HasData) return true;
+                }
+
+                return false;
+            }
+        }
+
+        public int SnapshotTerrainCount
+        {
+            get
+            {
+                var count = 0;
+
+                for (var i = 0; i < _terrainSnapshots.Count; i++)
+                {
+                    var entry = _terrainSnapshots[i];
+                    if (entry != null && entry.HasData) count++;
+                }
+
+                return count;
+            }
+        }
+
+        public void AddTerrainSnapshot(TerrainData terrainData, TerrainSnapshot snapshot)
+        {
+            if (terrainData == null) throw new ArgumentNullException(nameof(terrainData));
+            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+
+            _terrainSnapshots.Add(new TerrainSnapshotEntry(terrainData, snapshot));
+        }
+
+        public void ClearSnapshots()
+        {
+            _terrainSnapshots.Clear();
+
+            if (_legacySnapshot != null)
+            {
+                _legacySnapshot.Clear();
+            }
+        }
 
         public void SaveSpline(SplineContainer container)
         {

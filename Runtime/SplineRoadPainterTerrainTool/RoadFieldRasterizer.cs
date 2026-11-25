@@ -31,10 +31,22 @@ namespace NextnityStudio.SplineRoad
         public RectInt ClampedRect(Vector2 worldMin, Vector2 worldMax)
         {
             var last = Resolution - 1;
-            var minX = Mathf.Clamp(Mathf.FloorToInt((worldMin.x - _origin.x) / _cellSize.x - _offset), 0, last);
-            var maxX = Mathf.Clamp(Mathf.CeilToInt((worldMax.x - _origin.x) / _cellSize.x - _offset), 0, last);
-            var minY = Mathf.Clamp(Mathf.FloorToInt((worldMin.y - _origin.y) / _cellSize.y - _offset), 0, last);
-            var maxY = Mathf.Clamp(Mathf.CeilToInt((worldMax.y - _origin.y) / _cellSize.y - _offset), 0, last);
+            var rawMinX = Mathf.FloorToInt((worldMin.x - _origin.x) / _cellSize.x - _offset);
+            var rawMaxX = Mathf.CeilToInt((worldMax.x - _origin.x) / _cellSize.x - _offset);
+            var rawMinY = Mathf.FloorToInt((worldMin.y - _origin.y) / _cellSize.y - _offset);
+            var rawMaxY = Mathf.CeilToInt((worldMax.y - _origin.y) / _cellSize.y - _offset);
+
+            // No overlap at all: report an empty rect so callers skip the grid instead of clamping
+            // everything onto the border cell (which would produce a one-cell snapshot for every tile).
+            if (rawMaxX < 0 || rawMaxY < 0 || rawMinX > last || rawMinY > last)
+            {
+                return new RectInt(0, 0, 0, 0);
+            }
+
+            var minX = Mathf.Clamp(rawMinX, 0, last);
+            var maxX = Mathf.Clamp(rawMaxX, 0, last);
+            var minY = Mathf.Clamp(rawMinY, 0, last);
+            var maxY = Mathf.Clamp(rawMaxY, 0, last);
 
             return new RectInt(minX, minY, maxX - minX + 1, maxY - minY + 1);
         }

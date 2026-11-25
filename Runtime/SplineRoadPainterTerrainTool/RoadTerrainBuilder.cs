@@ -14,23 +14,63 @@ namespace NextnityStudio.SplineRoad
         private readonly RoadsideDetailScatterer _detailScatterer = new RoadsideDetailScatterer();
         private readonly RoadsideTreeScatterer _treeScatterer = new RoadsideTreeScatterer();
 
+        /// <summary>
+        /// Shared state of one apply pass. Kept across tiles so tree spacing and the road keep-out
+        /// are measured in world space instead of per tile.
+        /// </summary>
+        private sealed class BuildContext
+        {
+            public BuildContext(IReadOnlyList<Vector3[]> polylines, RoadProfile profile)
+            {
+                if (!RoadsideTreeScatterer.HasTreeRules(profile)) return;
+
+                TreeIndex = new PolylineIndex(polylines, RoadsideTreeScatterer.KeepOutRadius(profile));
+                TreeGrid = new TreeSeparationGrid(RoadsideTreeScatterer.MaxSeparation(profile));
+            }
+
+            public PolylineIndex TreeIndex { get; }
+
+            public TreeSeparationGrid TreeGrid { get; }
+        }
+
         #region Build
 
-        public void Build(Terrain terrain, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, TerrainSnapshot snapshot)
+        /// <summary>
+        /// Paints the road on every tile it crosses and stores one snapshot per touched tile.
+        /// Returns the number of touched tiles; tiles the road does not reach are left untouched.
+        /// </summary>
+        public int Build(IReadOnlyList<TerrainTile> tiles, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, SplineRoadData data)
         {
-            if (terrain == null) throw new ArgumentNullException(nameof(terrain));
+            if (tiles == null) throw new ArgumentNullException(nameof(tiles));
             if (polylines == null) throw new ArgumentNullException(nameof(polylines));
             if (profile == null) throw new ArgumentNullException(nameof(profile));
-            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            if (data == null) throw new ArgumentNullException(nameof(data));
 
-            var terrainData = terrain.terrainData;
-            var position = terrain.transform.position;
-            var origin = new Vector2(position.x, position.z);
-            var size = new Vector2(terrainData.size.x, terrainData.size.z);
+            data.ClearSnapshots();
 
-            var heightGrid = new TerrainGrid(terrainData.heightmapResolution, origin, size, false);
+            var context = new BuildContext(polylines, profile);
+            var built = 0;
+
+            for (var i = 0; i < tiles.Count; i++)
+            {
+                var snapshot = new TerrainSnapshot();
+                if (!BuildTile(tiles[i], polylines, profile, context, snapshot)) continue;
+
+                data.AddTerrainSnapshot(tiles[i].Data, snapshot);
+                built++;
+            }
+
+            return built;
+        }
+
+        private bool BuildTile(TerrainTile tile, IReadOnlyList<Vector3[]> polylines, RoadProfile profile, BuildContext context, TerrainSnapshot snapshot)
+        {
+            var terrainData = tile.Data;
+            if (terrainData == null) return false;
+
+            var heightGrid = new TerrainGrid(terrainData.heightmapResolution, tile.Min, tile.Size, false);
             var heightField = _rasterizer.Rasterize(heightGrid, polylines, profile.Reach, profile.JunctionBlendRadius);
-            if (heightField == null) return;
+            if (heightField == null) return false;
 
             RoadField alphaField = null;
             RoadField detailField = null;
@@ -39,19 +79,19 @@ namespace NextnityStudio.SplineRoad
             if (profile.PaintTexture && profile.RoadLayer != null)
             {
                 layerIndex = EnsureLayer(terrainData, profile.RoadLayer);
-                var alphaGrid = new TerrainGrid(terrainData.alphamapResolution, origin, size, true);
+                var alphaGrid = new TerrainGrid(terrainData.alphamapResolution, tile.Min, tile.Size, true);
                 alphaField = _rasterizer.Rasterize(alphaGrid, polylines, profile.Reach);
             }
 
             if (HasDetails(terrainData) && (profile.ClearDetails || HasRoadsideRule(profile, RoadsideKind.Detail)))
             {
-                var detailGrid = new TerrainGrid(terrainData.detailResolution, origin, size, true);
+                var detailGrid = new TerrainGrid(terrainData.detailResolution, tile.Min, tile.Size, true);
                 detailField = _rasterizer.Rasterize(detailGrid, polylines, profile.Reach);
             }
 
             snapshot.Capture(terrainData, heightField.Rect, alphaField?.Rect ?? default, detailField?.Rect ?? default);
 
-            ApplyHeights(terrainData, position.y, heightField, profile);
+            ApplyHeights(terrainData, tile.Position.y, heightField, profile);
 
             if (alphaField != null)
             {
@@ -73,14 +113,15 @@ namespace NextnityStudio.SplineRoad
 
             if (profile.ClearTrees)
             {
-                snapshot.StoreTrees(_vegetationClearer.ClearTrees(terrainData, position, polylines, profile.VegetationRadius));
+                snapshot.StoreTrees(_vegetationClearer.ClearTrees(terrainData, tile.Position, polylines, profile.VegetationRadius));
             }
 
-            if (HasRoadsideRule(profile, RoadsideKind.Tree) && terrainData.treePrototypes.Length > 0)
+            if (context.TreeGrid != null && terrainData.treePrototypes.Length > 0)
             {
-                var index = new PolylineIndex(polylines, RoadsideTreeScatterer.KeepOutRadius(profile));
-                snapshot.StorePlacedTrees(_treeScatterer.Scatter(terrainData, position, polylines, index, profile));
+                snapshot.StorePlacedTrees(_treeScatterer.Scatter(tile, polylines, context.TreeIndex, profile, context.TreeGrid));
             }
+
+            return true;
         }
 
         private bool HasDetails(TerrainData terrainData)

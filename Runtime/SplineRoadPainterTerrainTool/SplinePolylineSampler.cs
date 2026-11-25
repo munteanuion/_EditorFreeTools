@@ -13,7 +13,7 @@ namespace NextnityStudio.SplineRoad
         private const int MaxSamples = 16384;
         private const int SmoothingNeighbours = 3;
 
-        public List<Vector3[]> Sample(SplineContainer container, Terrain terrain, RoadProfile profile)
+        public List<Vector3[]> Sample(SplineContainer container, TerrainHeightSampler terrain, RoadProfile profile)
         {
             if (container == null) throw new ArgumentNullException(nameof(container));
             if (profile == null) throw new ArgumentNullException(nameof(profile));
@@ -23,6 +23,7 @@ namespace NextnityStudio.SplineRoad
             var matrix = containerTransform.localToWorldMatrix;
             var lossyScale = containerTransform.lossyScale;
             var scaleFactor = Mathf.Max(Mathf.Abs(lossyScale.x), Mathf.Abs(lossyScale.z));
+            var canFollowTerrain = profile.FollowTerrain && terrain != null && terrain.Count > 0;
 
             foreach (var spline in container.Splines)
             {
@@ -30,7 +31,7 @@ namespace NextnityStudio.SplineRoad
 
                 var points = SampleSpline(spline, matrix, scaleFactor, profile.SampleSpacing);
 
-                if (profile.FollowTerrain && terrain != null)
+                if (canFollowTerrain)
                 {
                     ProjectOnTerrain(points, terrain);
                     SmoothHeights(points, profile.SmoothingPasses);
@@ -58,13 +59,11 @@ namespace NextnityStudio.SplineRoad
             return points;
         }
 
-        private void ProjectOnTerrain(Vector3[] points, Terrain terrain)
+        private void ProjectOnTerrain(Vector3[] points, TerrainHeightSampler terrain)
         {
-            var baseHeight = terrain.transform.position.y;
-
             for (var i = 0; i < points.Length; i++)
             {
-                points[i].y = terrain.SampleHeight(points[i]) + baseHeight;
+                points[i].y = terrain.Sample(points[i]);
             }
         }
 

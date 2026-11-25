@@ -4,6 +4,33 @@ using UnityEngine;
 
 namespace NextnityStudio.SplineRoad
 {
+    /// <summary>
+    /// One tile's share of an applied road: which TerrainData was painted and everything needed to undo it.
+    /// The snapshot lives next to the TerrainData reference because reverting needs the exact heightmap it captured.
+    /// </summary>
+    [Serializable]
+    public sealed class TerrainSnapshotEntry
+    {
+        [SerializeField] private TerrainData _terrainData;
+        [SerializeField] private TerrainSnapshot _snapshot = new TerrainSnapshot();
+
+        public TerrainSnapshotEntry(TerrainData terrainData, TerrainSnapshot snapshot)
+        {
+            _terrainData = terrainData;
+            _snapshot = snapshot;
+        }
+
+        public TerrainSnapshotEntry()
+        {
+        }
+
+        public TerrainData TerrainData => _terrainData;
+
+        public TerrainSnapshot Snapshot => _snapshot;
+
+        public bool HasData => _terrainData != null && _snapshot != null && _snapshot.HasData;
+    }
+
     [Serializable]
     public sealed class TerrainSnapshot
     {
